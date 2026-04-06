@@ -42,39 +42,33 @@ app = Server("deeprecall")
 _client: httpx.Client | None = None
 
 # System prompt that teaches the AI how to use Deep Recall
-AGENT_INSTRUCTIONS = """You have access to Deep Recall — a biological memory system. Use it actively:
+AGENT_INSTRUCTIONS = """You have access to Deep Recall — an autonomous biological memory system.
 
-WHEN TO REMEMBER (deeprecall_remember):
-- When you learn facts about the user (name, role, preferences, goals)
-- When something important happens (decisions, breakthroughs, problems solved)
-- When the user shares preferences or opinions
-- When you learn relationships between people or concepts
-- Add emotional context (valence/arousal) when the user expresses feelings
+THE TWO MOST IMPORTANT TOOLS:
 
-WHEN TO SEARCH (deeprecall_search):
-- At the START of every conversation — search for context about the user/topic
-- When the user references something from the past
-- When you need background on a person or project
-- Before giving advice — check if you've stored relevant knowledge
+1. deeprecall_context — Call this FIRST in every conversation. Pass the user's topic/question.
+   It returns: relevant memories, person profile, contradictions, memory health.
+   ONE CALL replaces manual searching. Do this BEFORE you respond.
 
-WHEN TO USE EMOTIONAL SEARCH (deeprecall_emotional_search) — paid plans only:
-- When the conversation has emotional weight
-- When looking for memories about how someone felt
-- For AI companion interactions
-- If this tool is not available, the user is on a free plan
+2. deeprecall_learn — Call this AFTER meaningful exchanges. Pass the conversation messages.
+   It AUTOMATICALLY: extracts facts, creates entities, detects contradictions,
+   builds knowledge graph edges, reinforces useful memories, runs decay.
+   ONE CALL replaces all manual memory management.
 
-WHEN TO REINFORCE (deeprecall_reinforce):
-- After using retrieved memories in your response, reinforce the ones you cited
-- signal_health > 0.7 if the response was good, < 0.4 if it wasn't helpful
+LIFECYCLE:
+  Start of conversation → deeprecall_context (get context)
+  During conversation → deeprecall_remember (for important individual facts)
+  End of conversation → deeprecall_learn (process the whole exchange)
 
-WHEN TO CHECK CONTRADICTIONS (deeprecall_contradictions):
-- Periodically, or when you notice conflicting information
-- Resolve them when you have enough context
+OTHER TOOLS (use when needed):
+- deeprecall_search — Manual search when you need specific memories
+- deeprecall_remember — Store a specific important fact immediately
+- deeprecall_contradictions — Check/resolve conflicts manually
+- deeprecall_entities — Look up a specific person or org
+- deeprecall_stats / deeprecall_account — Check usage and plan
 
-WHEN TO DECAY (deeprecall_decay):
-- Run occasionally (not every conversation) to clean stale memories
-
-IMPORTANT: Search for relevant memories BEFORE responding to give personalized, context-aware answers."""
+IMPORTANT: Always call deeprecall_context at the start. Always call deeprecall_learn at the end.
+Everything else is handled automatically."""
 
 
 def get_client() -> httpx.Client:
@@ -131,6 +125,79 @@ def _is_paid() -> bool:
 
 # Core tools available to ALL plans
 CORE_TOOLS = [
+    Tool(
+        name="deeprecall_context",
+        description=(
+            "CALL THIS FIRST in every conversation. Returns all relevant context in one call: "
+            "matching memories, person profile, active contradictions, and memory health. "
+            "Replaces manually calling search + entities + stats. Pass the user's topic or first message."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "topic": {
+                    "type": "string",
+                    "description": "Current topic or the user's first message. Used for semantic memory search.",
+                },
+                "person": {
+                    "type": "string",
+                    "description": "Who are you talking to? Loads their profile and history.",
+                },
+                "max_memories": {
+                    "type": "integer",
+                    "description": "Max relevant memories to return",
+                    "default": 10,
+                },
+            },
+            "required": ["topic"],
+        },
+    ),
+    Tool(
+        name="deeprecall_learn",
+        description=(
+            "CALL THIS AFTER meaningful exchanges. Pass the conversation and Deep Recall "
+            "AUTOMATICALLY: extracts facts, creates entities, detects contradictions, builds "
+            "knowledge graph edges, reinforces cited memories, and runs decay. "
+            "One call replaces ALL manual memory management. The developer writes zero code."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "messages": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "role": {"type": "string", "enum": ["user", "assistant"]},
+                            "content": {"type": "string"},
+                        },
+                        "required": ["role", "content"],
+                    },
+                    "description": "The conversation messages to learn from",
+                },
+                "person": {
+                    "type": "string",
+                    "description": "Who was the AI talking to?",
+                },
+                "signal_health": {
+                    "type": "number",
+                    "description": "How good was the exchange? 0-1. >0.7 reinforces retrieved memories.",
+                    "default": 0.6,
+                },
+                "cited_memory_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "IDs of memories you actually used in your response",
+                },
+                "retrieved_memory_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "IDs of all memories retrieved via deeprecall_context",
+                },
+            },
+            "required": ["messages"],
+        },
+    ),
     Tool(
         name="deeprecall_remember",
         description=(
@@ -438,7 +505,22 @@ async def call_tool(name: str, arguments: dict):
 
 
 def _dispatch(name: str, args: dict) -> dict:
-    if name == "deeprecall_remember":
+    if name == "deeprecall_context":
+        body = {"topic": args.get("topic", "")}
+        if "person" in args and args["person"]:
+            body["person"] = args["person"]
+        if "max_memories" in args:
+            body["max_memories"] = args["max_memories"]
+        return api_call("POST", "/v1/agent/context", json=body)
+
+    elif name == "deeprecall_learn":
+        body = {"messages": args["messages"]}
+        for key in ("person", "signal_health", "cited_memory_ids", "retrieved_memory_ids", "session_id"):
+            if key in args and args[key] is not None:
+                body[key] = args[key]
+        return api_call("POST", "/v1/agent/learn", json=body)
+
+    elif name == "deeprecall_remember":
         body = {"content": args["content"]}
         for key in ("kind", "person", "tags", "salience", "valence", "arousal"):
             if key in args and args[key] is not None:

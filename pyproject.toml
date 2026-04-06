@@ -7,7 +7,7 @@ packages = ["deeprecall_mcp"]
 
 [project]
 name = "deeprecall-mcp"
-version = "0.3.0"
+version = "0.4.0"
 description = "Deep Recall MCP server — biological memory for AI agents. Works with Claude Code, Cursor, Windsurf, Cline."
 requires-python = ">=3.10"
 dependencies = [
