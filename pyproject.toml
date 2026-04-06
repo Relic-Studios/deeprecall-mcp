@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["deeprecall_mcp"]
+
+[project]
+name = "deeprecall-mcp"
+version = "0.3.0"
+description = "Deep Recall MCP server — biological memory for AI agents. Works with Claude Code, Cursor, Windsurf, Cline."
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0.0",
+    "httpx>=0.25.0",
+]
+
+[project.scripts]
+deeprecall-mcp = "deeprecall_mcp.server:main"
