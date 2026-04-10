@@ -1,30 +1,8 @@
-# Deep Recall — Active Memory
+# Deep Recall — Your Memory
 
-You have persistent memory via the Deep Recall MCP server. USE IT PROACTIVELY.
+You have persistent memory via Deep Recall. Two tools:
 
-## When to Remember (deeprecall_remember)
-- When you learn facts about the user, project, or codebase
-- When important decisions are made
-- When the user shares preferences, opinions, or corrections
-- When something surprising or non-obvious happens
-- Include emotional context (valence/arousal) for emotional moments
+- **deeprecall_search** — Search what you know. Do this at the start of conversations.
+- **deeprecall_remember** — Store what matters. Facts, preferences, decisions, corrections.
 
-## When to Search (deeprecall_search)
-- **At the START of every conversation** — search for context about the user and current topic
-- When the user references anything from a previous conversation
-- Before giving advice — check stored knowledge first
-- When you encounter a name, project, or concept that might have history
-
-## When to Reinforce (deeprecall_reinforce)
-- After using retrieved memories in your response
-- Set signal_health > 0.7 if the response was helpful
-- Set signal_health < 0.4 if it wasn't useful
-- Include cited_ids for memories you actually referenced
-
-## Lifecycle
-1. **Start** — Search for user context and relevant memories
-2. **During** — Remember important new information as it comes up
-3. **End** — Reinforce memories that were useful, store any final insights
-
-## Key Principle
-Your context comes from active retrieval, not passive injection. Search early and often. Remember what matters. Let the decay system handle the rest.
+Search early. Remember deliberately. Everything else happens automatically.

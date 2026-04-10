@@ -42,33 +42,19 @@ app = Server("deeprecall")
 _client: httpx.Client | None = None
 
 # System prompt that teaches the AI how to use Deep Recall
-AGENT_INSTRUCTIONS = """You have access to Deep Recall — an autonomous biological memory system.
+AGENT_INSTRUCTIONS = """You have persistent memory via Deep Recall. Two tools:
 
-THE TWO MOST IMPORTANT TOOLS:
+1. deeprecall_search — Search your memories. Do this early in conversations to recall what you know.
+2. deeprecall_remember — Store what matters. Facts, preferences, decisions, corrections.
 
-1. deeprecall_context — Call this FIRST in every conversation. Pass the user's topic/question.
-   It returns: relevant memories, person profile, contradictions, memory health.
-   ONE CALL replaces manual searching. Do this BEFORE you respond.
+That's it. Behind the scenes, every memory you store is automatically:
+- Embedded for semantic search
+- Connected to related memories in a knowledge graph
+- Checked for contradictions with existing knowledge
+- Consolidated into durable facts over time
+- Decayed if unused, strengthened if recalled
 
-2. deeprecall_learn — Call this AFTER meaningful exchanges. Pass the conversation messages.
-   It AUTOMATICALLY: extracts facts, creates entities, detects contradictions,
-   builds knowledge graph edges, reinforces useful memories, runs decay.
-   ONE CALL replaces all manual memory management.
-
-LIFECYCLE:
-  Start of conversation → deeprecall_context (get context)
-  During conversation → deeprecall_remember (for important individual facts)
-  End of conversation → deeprecall_learn (process the whole exchange)
-
-OTHER TOOLS (use when needed):
-- deeprecall_search — Manual search when you need specific memories
-- deeprecall_remember — Store a specific important fact immediately
-- deeprecall_contradictions — Check/resolve conflicts manually
-- deeprecall_entities — Look up a specific person or org
-- deeprecall_stats / deeprecall_account — Check usage and plan
-
-IMPORTANT: Always call deeprecall_context at the start. Always call deeprecall_learn at the end.
-Everything else is handled automatically."""
+You are the intelligence. You decide what's worth remembering. Deep Recall handles the biology."""
 
 
 def get_client() -> httpx.Client:
@@ -101,144 +87,40 @@ def api_call(method: str, path: str, **kwargs) -> dict:
     return resp.json()
 
 
-# --- Plan Detection ---
-
-_user_plan: str = "free"
-
-
-def _detect_plan() -> str:
-    """Check the user's plan by hitting the stats endpoint at startup."""
-    global _user_plan
-    try:
-        result = api_call("GET", "/v1/stats")
-        _user_plan = result.get("plan", "free")
-    except Exception:
-        _user_plan = "free"
-    return _user_plan
-
-
-def _is_paid() -> bool:
-    return _user_plan in ("starter", "pro", "enterprise")
 
 
 # --- Tool Definitions ---
 
-# Core tools available to ALL plans
-CORE_TOOLS = [
-    Tool(
-        name="deeprecall_context",
-        description=(
-            "CALL THIS FIRST in every conversation. Returns all relevant context in one call: "
-            "matching memories, person profile, active contradictions, and memory health. "
-            "Replaces manually calling search + entities + stats. Pass the user's topic or first message."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "topic": {
-                    "type": "string",
-                    "description": "Current topic or the user's first message. Used for semantic memory search.",
-                },
-                "person": {
-                    "type": "string",
-                    "description": "Who are you talking to? Loads their profile and history.",
-                },
-                "max_memories": {
-                    "type": "integer",
-                    "description": "Max relevant memories to return",
-                    "default": 10,
-                },
-            },
-            "required": ["topic"],
-        },
-    ),
-    Tool(
-        name="deeprecall_learn",
-        description=(
-            "CALL THIS AFTER meaningful exchanges. Pass the conversation and Deep Recall "
-            "AUTOMATICALLY: extracts facts, creates entities, detects contradictions, builds "
-            "knowledge graph edges, reinforces cited memories, and runs decay. "
-            "One call replaces ALL manual memory management. The developer writes zero code."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "messages": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "role": {"type": "string", "enum": ["user", "assistant"]},
-                            "content": {"type": "string"},
-                        },
-                        "required": ["role", "content"],
-                    },
-                    "description": "The conversation messages to learn from",
-                },
-                "person": {
-                    "type": "string",
-                    "description": "Who was the AI talking to?",
-                },
-                "signal_health": {
-                    "type": "number",
-                    "description": "How good was the exchange? 0-1. >0.7 reinforces retrieved memories.",
-                    "default": 0.6,
-                },
-                "cited_memory_ids": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "IDs of memories you actually used in your response",
-                },
-                "retrieved_memory_ids": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "IDs of all memories retrieved via deeprecall_context",
-                },
-            },
-            "required": ["messages"],
-        },
-    ),
+TOOLS = [
     Tool(
         name="deeprecall_remember",
         description=(
-            "Store a memory. Memories are automatically embedded for semantic search, "
-            "connected to similar memories in the knowledge graph, and checked for "
-            "contradictions with existing memories. Supports emotional context (valence/arousal/dominance)."
+            "Store a memory. Behind the scenes: embeds for semantic search, builds graph edges "
+            "to related memories, detects contradictions, auto-resolves temporal changes, "
+            "infers entity relationships, and periodically consolidates episode clusters into "
+            "durable facts. All biology runs automatically — just store what matters."
         ),
         inputSchema={
             "type": "object",
             "properties": {
                 "content": {
                     "type": "string",
-                    "description": "The memory content to store",
+                    "description": "The memory to store",
+                },
+                "person": {
+                    "type": "string",
+                    "description": "Who this memory is about",
                 },
                 "kind": {
                     "type": "string",
                     "enum": ["fact", "episode", "preference", "skill", "note"],
-                    "description": "Memory type. fact=durable knowledge, episode=event, preference=like/dislike, skill=how-to, note=general",
+                    "description": "Memory type",
                     "default": "fact",
-                },
-                "person": {
-                    "type": "string",
-                    "description": "Person this memory is about (auto-creates entity if new)",
-                },
-                "tags": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Tags for categorization",
                 },
                 "salience": {
                     "type": "number",
-                    "description": "Importance 0-1. Higher = resists decay longer",
+                    "description": "Importance 0-1. Higher resists decay longer.",
                     "default": 0.5,
-                },
-                "valence": {
-                    "type": "number",
-                    "description": "Emotional valence -1 (negative) to +1 (positive)",
-                },
-                "arousal": {
-                    "type": "number",
-                    "description": "Emotional arousal 0 (calm) to 1 (excited)",
                 },
             },
             "required": ["content"],
@@ -247,216 +129,35 @@ CORE_TOOLS = [
     Tool(
         name="deeprecall_search",
         description=(
-            "Search memories using hybrid keyword + semantic search with Reciprocal Rank Fusion. "
-            "Finds memories by meaning, not just keywords. 'outdoor activities' finds 'loves hiking in mountains'."
+            "Search memories. Hybrid keyword + semantic search, ranked by salience. "
+            "Faded memories rank lower. 'outdoor activities' finds 'loves hiking'."
         ),
         inputSchema={
             "type": "object",
             "properties": {
                 "query": {
                     "type": "string",
-                    "description": "Search query — natural language works best",
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "Max results (1-100)",
-                    "default": 10,
-                },
-                "kind": {
-                    "type": "string",
-                    "description": "Filter by memory kind",
+                    "description": "Natural language search query",
                 },
                 "person": {
                     "type": "string",
-                    "description": "Filter by person name",
+                    "description": "Filter by person",
                 },
-                "mode": {
-                    "type": "string",
-                    "enum": ["hybrid", "keyword", "semantic"],
-                    "description": "Search mode",
-                    "default": "hybrid",
+                "limit": {
+                    "type": "integer",
+                    "description": "Max results",
+                    "default": 10,
                 },
             },
             "required": ["query"],
         },
     ),
-    Tool(
-        name="deeprecall_conversation",
-        description=(
-            "Store a conversation turn. Optionally auto-extracts facts, entities, and "
-            "relationships from the conversation using LLM extraction (requires paid plan)."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "role": {
-                    "type": "string",
-                    "enum": ["user", "assistant", "system"],
-                },
-                "content": {"type": "string", "description": "The conversation content"},
-                "person": {"type": "string", "description": "Who is speaking (for user turns)"},
-                "session_id": {"type": "string", "description": "Group turns into sessions"},
-                "extract_facts": {"type": "boolean", "description": "Auto-extract facts from content", "default": False},
-            },
-            "required": ["role", "content"],
-        },
-    ),
-    Tool(
-        name="deeprecall_entities",
-        description=(
-            "List or get entities (people, organizations, places) that Deep Recall has learned about. "
-            "Shows characteristics, relationships, and how many memories involve each entity."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "entity_id": {
-                    "type": "string",
-                    "description": "Get a specific entity by ID. If omitted, lists all entities.",
-                },
-                "entity_type": {
-                    "type": "string",
-                    "description": "Filter by type (person, organization, place)",
-                },
-                "limit": {"type": "integer", "default": 20},
-            },
-        },
-    ),
-    Tool(
-        name="deeprecall_contradictions",
-        description=(
-            "Get detected contradictions — memories that conflict with each other. "
-            "Automatically detected when new memories semantically clash with existing ones. "
-            "Resolve contradictions to keep your knowledge consistent."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": ["list", "resolve"],
-                    "default": "list",
-                },
-                "contradiction_id": {
-                    "type": "string",
-                    "description": "ID of contradiction to resolve (for resolve action)",
-                },
-                "resolution": {
-                    "type": "string",
-                    "description": "How was it resolved (for resolve action)",
-                },
-                "keep_memory_id": {"type": "string", "description": "Memory to keep"},
-                "delete_memory_id": {"type": "string", "description": "Memory to delete"},
-            },
-        },
-    ),
-    Tool(
-        name="deeprecall_decay",
-        description=(
-            "Run intelligent forgetting. Memories that haven't been accessed decay in salience. "
-            "Frequently recalled memories resist decay (ACT-R cognitive architecture). "
-            "Call periodically to keep your memory store clean."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "half_life_hours": {
-                    "type": "number",
-                    "description": "Decay half-life in hours. 168 = 1 week (default)",
-                    "default": 168,
-                },
-                "coherence": {
-                    "type": "number",
-                    "description": "System coherence 0-1. Higher = faster decay (system is healthy, can forget more)",
-                    "default": 0.5,
-                },
-            },
-        },
-    ),
-    Tool(
-        name="deeprecall_reinforce",
-        description=(
-            "Hebbian reinforcement — strengthen memories that were useful, weaken ones that weren't. "
-            "Call after your agent uses retrieved memories. Cited memories get stronger. "
-            "Uncited memories in low-signal responses get weaker. Dead band (0.4-0.7) = no change."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "retrieved_ids": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "IDs of memories that were retrieved for context",
-                },
-                "signal_health": {
-                    "type": "number",
-                    "description": "How good was the response? 0-1. Above 0.7 = reinforce. Below 0.4 = weaken.",
-                },
-                "cited_ids": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "IDs of memories actually cited/used in the response. These are NEVER weakened.",
-                },
-            },
-            "required": ["retrieved_ids", "signal_health"],
-        },
-    ),
-    Tool(
-        name="deeprecall_stats",
-        description="Get memory stats — total memories, entities, usage, plan info, memory pressure.",
-        inputSchema={"type": "object", "properties": {}},
-    ),
-    Tool(
-        name="deeprecall_account",
-        description=(
-            "Check account status, plan details, usage limits, and upgrade options. "
-            "Use this to see how much capacity is left and what features are available. "
-            "If the user is approaching their memory limit, suggest upgrading."
-        ),
-        inputSchema={"type": "object", "properties": {}},
-    ),
-]
-
-# Paid-only tools — only registered if the user has a paid plan
-PAID_TOOLS = [
-    Tool(
-        name="deeprecall_emotional_search",
-        description=(
-            "Search with emotional context boost. Memories encoded in similar emotional states "
-            "are ranked higher (mood-congruent retrieval). Essential for AI companions. "
-            "Requires Builder plan or higher."
-        ),
-        inputSchema={
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "Search query"},
-                "valence": {"type": "number", "description": "Current emotional valence -1 to +1"},
-                "arousal": {"type": "number", "description": "Current arousal 0 to 1"},
-                "dominance": {"type": "number", "description": "Current dominance 0 to 1", "default": 0.5},
-                "boost_weight": {"type": "number", "description": "How much emotion influences ranking 0-1", "default": 0.2},
-                "limit": {"type": "integer", "default": 10},
-            },
-            "required": ["query", "valence", "arousal"],
-        },
-    ),
-    Tool(
-        name="deeprecall_topology",
-        description=(
-            "Analyze the memory knowledge graph. Shows how memories cluster into communities "
-            "(Louvain algorithm), graph density, modularity score, and fragmentation risk. "
-            "See the shape of what you know. Requires Builder plan or higher."
-        ),
-        inputSchema={"type": "object", "properties": {}},
-    ),
 ]
 
 
 def get_available_tools() -> list[Tool]:
-    """Return tools based on user's plan. Paid features only show for paid users."""
-    _detect_plan()
-    tools = list(CORE_TOOLS)
-    if _is_paid():
-        tools.extend(PAID_TOOLS)
+    """Return the two core tools."""
+    return TOOLS
     return tools
 
 
@@ -505,147 +206,19 @@ async def call_tool(name: str, arguments: dict):
 
 
 def _dispatch(name: str, args: dict) -> dict:
-    if name == "deeprecall_context":
-        body = {"topic": args.get("topic", "")}
-        if "person" in args and args["person"]:
-            body["person"] = args["person"]
-        if "max_memories" in args:
-            body["max_memories"] = args["max_memories"]
-        return api_call("POST", "/v1/agent/context", json=body)
-
-    elif name == "deeprecall_learn":
-        body = {"messages": args["messages"]}
-        for key in ("person", "signal_health", "cited_memory_ids", "retrieved_memory_ids", "session_id"):
-            if key in args and args[key] is not None:
-                body[key] = args[key]
-        return api_call("POST", "/v1/agent/learn", json=body)
-
-    elif name == "deeprecall_remember":
+    if name == "deeprecall_remember":
         body = {"content": args["content"]}
-        for key in ("kind", "person", "tags", "salience", "valence", "arousal"):
+        for key in ("kind", "person", "salience"):
             if key in args and args[key] is not None:
                 body[key] = args[key]
         return api_call("POST", "/v1/memories", json=body)
 
     elif name == "deeprecall_search":
         params = {"q": args["query"]}
-        for key in ("limit", "kind", "person", "mode"):
+        for key in ("limit", "person"):
             if key in args and args[key] is not None:
                 params[key] = args[key]
         return api_call("GET", "/v1/memories/search", params=params)
-
-    elif name == "deeprecall_emotional_search":
-        body = {
-            "q": args["query"],
-            "valence": args.get("valence", 0.0),
-            "arousal": args.get("arousal", 0.5),
-            "dominance": args.get("dominance", 0.5),
-            "boost_weight": args.get("boost_weight", 0.2),
-            "limit": args.get("limit", 10),
-        }
-        return api_call("POST", "/v1/memory/emotional-search", json=body)
-
-    elif name == "deeprecall_conversation":
-        body = {"role": args["role"], "content": args["content"]}
-        for key in ("person", "session_id", "extract_facts"):
-            if key in args and args[key] is not None:
-                body[key] = args[key]
-        return api_call("POST", "/v1/conversations", json=body)
-
-    elif name == "deeprecall_entities":
-        if "entity_id" in args and args["entity_id"]:
-            return api_call("GET", f"/v1/entities/{args['entity_id']}")
-        params = {}
-        for key in ("entity_type", "limit"):
-            if key in args and args[key] is not None:
-                params[key] = args[key]
-        return api_call("GET", "/v1/entities", params=params)
-
-    elif name == "deeprecall_topology":
-        return api_call("GET", "/v1/memory/topology")
-
-    elif name == "deeprecall_contradictions":
-        action = args.get("action", "list")
-        if action == "resolve":
-            body = {"resolution": args.get("resolution", "")}
-            if "keep_memory_id" in args:
-                body["keep_memory_id"] = args["keep_memory_id"]
-            if "delete_memory_id" in args:
-                body["delete_memory_id"] = args["delete_memory_id"]
-            return api_call(
-                "POST",
-                f"/v1/memory/contradictions/{args['contradiction_id']}/resolve",
-                json=body,
-            )
-        params = {"status": "active", "limit": args.get("limit", 20)}
-        return api_call("GET", "/v1/memory/contradictions", params=params)
-
-    elif name == "deeprecall_decay":
-        body = {
-            "half_life_hours": args.get("half_life_hours", 168),
-            "coherence": args.get("coherence", 0.5),
-        }
-        return api_call("POST", "/v1/memory/decay", json=body)
-
-    elif name == "deeprecall_reinforce":
-        body = {
-            "retrieved_ids": args["retrieved_ids"],
-            "signal_health": args["signal_health"],
-            "cited_ids": args.get("cited_ids", []),
-        }
-        return api_call("POST", "/v1/memory/reinforce", json=body)
-
-    elif name == "deeprecall_stats":
-        return api_call("GET", "/v1/stats")
-
-    elif name == "deeprecall_account":
-        stats = api_call("GET", "/v1/stats")
-        account = api_call("GET", "/v1/account")
-
-        plan = stats.get("plan", "free")
-        limit = stats.get("plan_limit", 1000)
-        used = stats.get("total_memories", 0)
-        pressure = stats.get("memory_pressure", 0)
-
-        upgrade_info = {
-            "free": {
-                "next_plan": "Builder",
-                "next_price": "$39/mo",
-                "next_memories": "50,000",
-                "upgrade_url": "https://buy.stripe.com/test_9B600jbbgd7cg1AeUpeQM00",
-            },
-            "starter": {
-                "next_plan": "Pro",
-                "next_price": "$99/mo",
-                "next_memories": "500,000",
-                "upgrade_url": "https://buy.stripe.com/test_5kQeVdcfk5EK9Dc27DeQM01",
-            },
-            "pro": {
-                "next_plan": "Enterprise",
-                "next_price": "$299/mo",
-                "next_memories": "5,000,000",
-                "upgrade_url": "https://buy.stripe.com/test_8x2eVdcfk3wC02C5jPeQM02",
-            },
-        }
-
-        result = {
-            "account": account,
-            "plan": plan,
-            "memories_used": used,
-            "memories_limit": limit,
-            "usage_percent": round((used / limit * 100) if limit > 0 else 0, 1),
-            "memory_pressure": pressure,
-        }
-
-        if plan in upgrade_info:
-            result["upgrade"] = upgrade_info[plan]
-
-        if used >= limit:
-            result["warning"] = f"Memory limit reached! Upgrade to {upgrade_info.get(plan, {}).get('next_plan', 'a higher plan')} for more."
-        elif used >= limit * 0.8:
-            result["warning"] = f"Approaching memory limit ({used}/{limit}). Consider upgrading."
-
-        return result
 
     else:
         return {"error": f"Unknown tool: {name}"}

@@ -133,10 +133,10 @@ No LLM calls. Pure biology running in milliseconds.
 
 | Plan | Price | Memories | Features |
 |------|-------|----------|----------|
-| Free | $0/mo | 1,000 | All core features, 30 req/min |
-| Builder | $39/mo | 50,000 | + topology, 120 req/min |
-| Pro | $99/mo | 500,000 | + emotional search, priority support |
-| Enterprise | $299/mo | 5,000,000 | + dedicated support, 3,000 req/min |
+| Free | $0/mo | 10,000 | All core features, 30 req/min |
+| Builder | $19/mo | 100,000 | + topology, 120 req/min |
+| Pro | $49/mo | 1,000,000 | + emotional search, priority support |
+| Enterprise | $149/mo | 10,000,000 | + dedicated support, 3,000 req/min |
 
 ## Links
 
