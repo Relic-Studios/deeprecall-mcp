@@ -79,43 +79,24 @@ Your AI now has memory tools. Try saying:
 
 ## How it works
 
-**The pattern: Context, Remember, Process**
-
-1. **Before** — `deeprecall_context`: Pull relevant memories, person profile, contradictions
-2. **During** — `deeprecall_remember`: Your agent stores what it thinks matters
-3. **After** — `deeprecall_learn`: Biology takes over — reinforcement, decay, contradiction detection, graph building, memory consolidation
-
-Your agent decides what's worth keeping. Deep Recall handles what happens to those memories over time.
-
-## What happens behind the scenes
-
-Every time your agent stores a memory, Deep Recall automatically:
-
-- **Builds graph edges** to semantically similar memories
-- **Detects contradictions** with existing knowledge
-- **Resolves temporal changes** ("moved from SF to NYC" → auto-supersedes, not contradiction)
-- **Infers relationships** from entity co-occurrence ("Alice" + "Google" in 3 memories → `works_at`)
-- **Consolidates clusters** of related episodic memories into durable facts
-- **Weights search by salience** — faded memories rank lower, like real recall
-
-No LLM calls. Pure biology running in milliseconds.
-
-## Tools
+Two tools. That's it.
 
 | Tool | What it does |
 |------|-------------|
-| `deeprecall_context` | Pull all relevant context before responding (memories, profile, contradictions) |
-| `deeprecall_remember` | Store a memory with optional emotional context (valence/arousal) |
-| `deeprecall_learn` | Post-conversation biology: reinforcement, decay, contradiction scan |
-| `deeprecall_search` | Hybrid keyword + semantic search (41ms median) |
-| `deeprecall_entities` | Track people, orgs, and their auto-inferred relationships |
-| `deeprecall_contradictions` | View and resolve conflicting memories |
-| `deeprecall_decay` | Manual intelligent forgetting (also runs automatically) |
-| `deeprecall_reinforce` | Hebbian learning — cited memories get stronger |
-| `deeprecall_stats` | Memory health, usage, plan info |
-| `deeprecall_account` | Plan status and upgrade options |
-| `deeprecall_emotional_search` | Mood-congruent retrieval (paid) |
-| `deeprecall_topology` | Louvain community detection on memory graph (paid) |
+| `deeprecall_search` | Find memories. Hybrid keyword + semantic, salience-weighted. |
+| `deeprecall_remember` | Store a memory. All biology runs automatically. |
+
+Your agent searches early, remembers what matters. Behind the scenes, every store automatically:
+
+- Embeds for semantic search
+- Builds graph edges to related memories
+- Detects contradictions with existing knowledge
+- Resolves temporal changes ("moved to NYC" auto-supersedes "lives in SF")
+- Infers entity relationships from co-occurrence
+- Consolidates episode clusters into durable facts
+- Decays unused memories, strengthens recalled ones
+
+No LLM calls. Pure biology in milliseconds. Two tools in your context window.
 
 ## Why not Mem0 / Zep / Letta?
 
